@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoboArm ESP32 Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=Teko:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --saffron: #FF9933;
+    --saffron-dark: #E07000;
+    --saffron-glow: rgba(255,153,51,0.35);
+    --green: #138808;
+    --green-light: #1DB810;
+    --green-glow: rgba(19,136,8,0.35);
+    --white: #F5F5F5;
+    --navy: #0D1B2A;
+    --panel: #111C2B;
+    --panel2: #0A1520;
+    --border: rgba(255,153,51,0.18);
+    --border-green: rgba(19,136,8,0.25);
+    --text: #E8E8E8;
+    --text-dim: #7A8FA6;
+    --red: #E63946;
+    --blue: #4CC9F0;
+    --font-display: 'Teko', sans-serif;
+    --font-ui: 'Rajdhani', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+  }
+  .light-mode {
+    --navy: #F0F4F8;
+    --panel: #FFFFFF;
+    --panel2: #E8EEF5;
+    --border: rgba(255,153,51,0.3);
+    --border-green: rgba(19,136,8,0.3);
+    --text: #1A2332;
+    --text-dim: #5A6A7A;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--navy);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background 0.3s, color 0.3s;
+  }
+
+  /* BG pattern */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,153,51,0.04) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,153,51,0.04) 40px);
+    pointer-events: none;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,21,32,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 56px;
+  }
+  .light-mode header { background: rgba(240,244,248,0.92); }
+  .logo {
+    font-family: var(--font-display);
+    font-size: 28px; letter-spacing: 2px; font-weight: 600;
+    background: linear-gradient(90deg, var(--saffron), #fff 50%, var(--green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 14px; border-radius: 20px;
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px;
+    background: rgba(230,57,70,0.12); border: 1px solid rgba(230,57,70,0.35);
+    color: var(--red); transition: all 0.4s;
+  }
+  .status-pill.connected {
+    background: rgba(19,136,8,0.12); border-color: rgba(19,136,8,0.4);
+    color: var(--green-light);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); transition: background 0.4s;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .status-pill.connected .status-dot { background: var(--green-light); }
+  .theme-btn, .ip-btn {
+    background: rgba(255,153,51,0.1); border: 1px solid var(--border);
+    color: var(--saffron); padding: 5px 12px; border-radius: 6px;
+    cursor: pointer; font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    transition: all 0.2s;
+  }
+  .theme-btn:hover, .ip-btn:hover { background: rgba(255,153,51,0.22); }
+
+  /* ── LAYOUT ── */
+  .container { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 18px 16px 40px; }
+
+  /* ── IP Modal ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px 32px; min-width: 320px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal h3 { font-family: var(--font-display); font-size: 22px; color: var(--saffron); margin-bottom: 16px; }
+  .modal input {
+    width: 100%; background: var(--panel2); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 14px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 14px; margin-bottom: 14px;
+    outline: none;
+  }
+  .modal input:focus { border-color: var(--saffron); }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* ── SECTION TITLE ── */
+  .section-title {
+    font-family: var(--font-display); font-size: 20px; font-weight: 500;
+    letter-spacing: 2px; color: var(--saffron);
+    border-left: 3px solid var(--saffron); padding-left: 10px;
+    margin-bottom: 14px;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+    transition: border-color 0.3s;
+  }
+  .card:hover { border-color: rgba(255,153,51,0.35); }
+
+  /* ── SERVO DISPLAY ── */
+  .servo-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 18px;
+  }
+  .servo-box {
+    background: var(--panel2); border: 1px solid var(--border-green);
+    border-radius: 10px; padding: 12px 10px; text-align: center;
+  }
+  .servo-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+  .servo-val {
+    font-family: var(--font-display); font-size: 36px; font-weight: 600;
+    color: var(--green-light); line-height: 1.1;
+  }
+  .servo-unit { font-size: 12px; color: var(--text-dim); }
+  .servo-bar-wrap { height: 4px; background: rgba(255,255,255,0.07); border-radius: 2px; margin-top: 8px; }
+  .servo-bar { height: 4px; background: linear-gradient(90deg, var(--green), var(--saffron)); border-radius: 2px; transition: width 0.4s; }
+
+  /* ── MODE BUTTONS ── */
+  .mode-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
+  .mode-btn {
+    padding: 11px 6px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text-dim);
+    font-family: var(--font-ui); font-size: 14px; font-weight: 600; letter-spacing: 1px;
+    cursor: pointer; transition: all 0.22s; text-align: center;
+  }
+  .mode-btn:hover { border-color: var(--saffron); color: var(--saffron); }
+  .mode-btn.active {
+    background: linear-gradient(135deg, rgba(255,153,51,0.18), rgba(19,136,8,0.14));
+    border-color: var(--saffron); color: var(--saffron);
+    box-shadow: 0 0 14px var(--saffron-glow);
+  }
+
+  /* ── SPEED ── */
+  .speed-row { display: flex; align-items: center; gap: 14px; }
+  .speed-val {
+    font-family: var(--font-display); font-size: 38px; font-weight: 600;
+    color: var(--saffron); min-width: 48px; text-align: center; line-height: 1;
+  }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 6px; border-radius: 3px; background: rgba(255,153,51,0.15); outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--saffron); box-shadow: 0 0 10px var(--saffron-glow); }
+
+  /* ── JOYSTICKS ── */
+  .joystick-section { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .joystick-label { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); letter-spacing: 2px; }
+  canvas.joystick-canvas { border-radius: 50%; cursor: crosshair; touch-action: none; display: block; }
+  .joystick-vals { font-family: var(--font-mono); font-size: 12px; color: var(--saffron); }
+
+  /* ── RECORDING ── */
+  .rec-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .steps-list {
+    background: var(--panel2); border-radius: 8px; border: 1px solid var(--border);
+    max-height: 180px; overflow-y: auto; padding: 8px;
+  }
+  .step-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05); font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  }
+  .step-item:last-child { border-bottom: none; }
+  .step-num { color: var(--saffron); min-width: 28px; }
+  .step-delete { margin-left: auto; background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; }
+  .empty-msg { text-align: center; color: var(--text-dim); padding: 20px; font-size: 13px; }
+
+  /* ── PLAYBACK ── */
+  .play-btns { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .loop-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-dim); cursor: pointer; margin-left: auto; }
+  .loop-toggle input { accent-color: var(--saffron); width: 16px; height: 16px; }
+
+  /* ── MANUAL PROGRAMMING ── */
+  .manual-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .prog-table-wrap { overflow-x: auto; }
+  table.prog-table {
+    width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px;
+  }
+  .prog-table th {
+    background: rgba(255,153,51,0.1); color: var(--saffron);
+    padding: 8px 10px; text-align: center; border: 1px solid var(--border);
+    font-size: 11px; letter-spacing: 1px;
+  }
+  .prog-table td {
+    padding: 5px 6px; text-align: center;
+    border: 1px solid rgba(255,255,255,0.05); color: var(--text);
+  }
+  .prog-table tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+  .prog-table input {
+    background: transparent; border: 1px solid transparent; color: var(--text);
+    width: 52px; text-align: center; font-family: var(--font-mono); font-size: 12px;
+    padding: 3px; border-radius: 4px; outline: none;
+  }
+  .prog-table input:focus { border-color: var(--saffron); background: rgba(255,153,51,0.07); }
+  .prog-table .del-row-btn { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    padding: 9px 18px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text);
+    font-family: var(--font-ui); font-size: 14px; font-weight: 600; letter-spacing: 1px;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--saffron); color: var(--saffron); background: rgba(255,153,51,0.08); }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--saffron-dark), var(--saffron));
+    border-color: var(--saffron); color: #fff;
+    box-shadow: 0 0 16px var(--saffron-glow);
+  }
+  .btn.primary:hover { box-shadow: 0 0 24px var(--saffron-glow); }
+  .btn.success {
+    background: linear-gradient(135deg, var(--green), var(--green-light));
+    border-color: var(--green-light); color: #fff;
+    box-shadow: 0 0 16px var(--green-glow);
+  }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: rgba(230,57,70,0.12); }
+  .btn.active-rec { border-color: var(--red); color: #fff; background: var(--red); animation: pulse-rec 1s infinite; }
+  @keyframes pulse-rec {
+    0%,100%{ box-shadow: 0 0 12px rgba(230,57,70,0.5); }
+    50%{ box-shadow: 0 0 24px rgba(230,57,70,0.9); }
+  }
+
+  /* ── GRID LAYOUT ── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 16px;
+  }
+  .left-col { display: flex; flex-direction: column; gap: 16px; }
+  .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+  .tricolor-bar {
+    height: 4px;
+    background: linear-gradient(90deg, var(--saffron) 33.33%, #fff 33.33% 66.66%, var(--green) 66.66%);
+    border-radius: 2px; margin-bottom: 18px;
+  }
+
+  /* ── LOG ── */
+  .ws-log {
+    background: var(--panel2); border-radius: 8px; border: 1px solid var(--border-green);
+    height: 90px; overflow-y: auto; padding: 8px 10px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--green-light);
+  }
+  .ws-log .log-line { margin-bottom: 2px; }
+  .ws-log .log-rx { color: var(--blue); }
+  .ws-log .log-err { color: var(--red); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .servo-grid { grid-template-columns: repeat(2,1fr); }
+    .joystick-section { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 500px) {
+    .joystick-section { grid-template-columns: 1fr; }
+    .mode-grid { grid-template-columns: 1fr 1fr; }
+    header { padding: 0 10px; }
+    .logo { font-size: 22px; }
+  }
+
+  /* ── SAVED PATHS ── */
+  .saved-paths-section { margin-top: 16px; }
+  .save-bar {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 16px; padding: 14px 16px;
+    background: var(--panel2); border-radius: 10px; border: 1px solid var(--border);
+  }
+  .save-bar-label { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+  .save-bar input[type=text] {
+    flex: 1; min-width: 140px; background: var(--panel);
+    border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 7px;
+    font-family: var(--font-ui); font-size: 14px; outline: none;
+  }
+  .save-bar input[type=text]:focus { border-color: var(--saffron); }
+  .color-dots { display: flex; gap: 6px; align-items: center; }
+  .color-dot {
+    width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: all 0.18s;
+  }
+  .color-dot.selected { border-color: #fff; transform: scale(1.25); }
+  .source-select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 10px; border-radius: 7px; font-family: var(--font-ui); font-size: 13px;
+    cursor: pointer; outline: none;
+  }
+  .source-select:focus { border-color: var(--saffron); }
+
+  .paths-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .path-card {
+    background: var(--panel); border-radius: 11px;
+    border: 1px solid var(--border); overflow: hidden;
+    transition: all 0.22s; position: relative;
+  }
+  .path-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.35); }
+  .path-card-accent { height: 4px; width: 100%; }
+  .path-card-body { padding: 13px 14px; }
+  .path-card-name {
+    font-family: var(--font-display); font-size: 20px; font-weight: 600;
+    letter-spacing: 1px; margin-bottom: 4px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .path-card-meta {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .path-card-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 11px; }
+  .path-tag {
+    background: rgba(255,153,51,0.1); border: 1px solid rgba(255,153,51,0.2);
+    color: var(--saffron); font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 7px; border-radius: 10px; letter-spacing: 0.5px;
+  }
+  .path-card-actions { display: flex; gap: 7px; }
+  .path-run-btn {
+    flex: 1; padding: 8px 6px; border-radius: 8px; border: none;
+    font-family: var(--font-ui); font-size: 14px; font-weight: 700; letter-spacing: 1px;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .path-run-btn:hover { filter: brightness(1.2); transform: scale(1.03); }
+  .path-run-btn.running {
+    animation: pulse-run 0.8s infinite;
+  }
+  @keyframes pulse-run {
+    0%,100%{ opacity:1; } 50%{ opacity:0.65; }
+  }
+  .path-icon-btn {
+    background: var(--panel2); border: 1px solid var(--border);
+    color: var(--text-dim); width: 34px; height: 34px; border-radius: 7px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; transition: all 0.18s; flex-shrink: 0;
+  }
+  .path-icon-btn:hover { border-color: var(--saffron); color: var(--saffron); }
+  .path-icon-btn.del:hover { border-color: var(--red); color: var(--red); }
+
+  .paths-empty {
+    grid-column: 1/-1; text-align: center; padding: 36px 20px;
+    font-family: var(--font-mono); color: var(--text-dim); font-size: 13px;
+  }
+  .paths-empty .big-icon { font-size: 40px; margin-bottom: 10px; }
+
+  /* running indicator overlay */
+  .path-running-bar {
+    position: absolute; bottom: 0; left: 0; height: 3px;
+    background: linear-gradient(90deg, var(--saffron), var(--green));
+    animation: running-bar 1.2s linear infinite;
+    display: none;
+  }
+  .path-card.running .path-running-bar { display: block; }
+  @keyframes running-bar {
+    0%{ width: 0%; left: 0; }
+    50%{ width: 100%; left: 0; }
+    100%{ width: 0%; left: 100%; }
+  }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,153,51,0.3); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- IP Modal -->
+<div class="modal-overlay" id="ipModal">
+  <div class="modal">
+    <h3>⚙ ESP32 IP ADDRESS</h3>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">Enter the IP address of your ESP32 (WebSocket on port 81)</p>
+    <input type="text" id="ipInput" placeholder="192.168.1.100" />
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="connectWS()">Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">⟨ ROBOARM ⟩</div>
+  <div class="header-right">
+    <div class="status-pill" id="statusPill">
+      <span class="status-dot"></span>
+      <span id="statusText">DISCONNECTED</span>
+    </div>
+    <button class="ip-btn" onclick="openModal()">IP ⚙</button>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tricolor-bar"></div>
+
+  <!-- SERVO STATUS -->
+  <div class="servo-grid">
+    <div class="servo-box">
+      <div class="servo-label">SERVO 1</div>
+      <div class="servo-val" id="sv1">90</div>
+      <div class="servo-unit">DEG</div>
+      <div class="servo-bar-wrap"><div class="servo-bar" id="sb1" style="width:50%"></div></div>
+    </div>
+    <div class="servo-box">
+      <div class="servo-label">SERVO 2</div>
+      <div class="servo-val" id="sv2">90</div>
+      <div class="servo-unit">DEG</div>
+      <div class="servo-bar-wrap"><div class="servo-bar" id="sb2" style="width:50%"></div></div>
+    </div>
+    <div class="servo-box">
+      <div class="servo-label">SERVO 3</div>
+      <div class="servo-val" id="sv3">90</div>
+      <div class="servo-unit">DEG</div>
+      <div class="servo-bar-wrap"><div class="servo-bar" id="sb3" style="width:50%"></div></div>
+    </div>
+    <div class="servo-box">
+      <div class="servo-label">SERVO 4</div>
+      <div class="servo-val" id="sv4">90</div>
+      <div class="servo-unit">DEG</div>
+      <div class="servo-bar-wrap"><div class="servo-bar" id="sb4" style="width:50%"></div></div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- MODE SELECTION -->
+      <div class="card">
+        <div class="section-title">CONTROL MODE</div>
+        <div class="mode-grid">
+          <button class="mode-btn" id="mode-physical" onclick="setMode('physical')">🎮 PHYSICAL</button>
+          <button class="mode-btn active" id="mode-web" onclick="setMode('web')">🌐 WEB</button>
+          <button class="mode-btn" id="mode-auto" onclick="setMode('auto')">🤖 AUTO</button>
+          <button class="mode-btn" id="mode-manual_prog" onclick="setMode('manual_prog')">✏ MANUAL PROG</button>
+        </div>
+      </div>
+
+      <!-- SPEED -->
+      <div class="card">
+        <div class="section-title">SERVO SPEED</div>
+        <div class="speed-row">
+          <span class="speed-val" id="speedVal">5</span>
+          <input type="range" id="speedSlider" min="1" max="10" value="5" oninput="onSpeedChange(this.value)">
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-top:6px;font-family:var(--font-mono)">
+          <span>SLOW</span><span>FAST</span>
+        </div>
+      </div>
+
+      <!-- PLAYBACK -->
+      <div class="card">
+        <div class="section-title">PLAYBACK</div>
+        <div class="play-btns">
+          <button class="btn success" onclick="playPath()">▶ PLAY PATH</button>
+          <button class="btn danger" onclick="stopPath()">■ STOP</button>
+          <label class="loop-toggle">
+            <input type="checkbox" id="loopToggle"> LOOP
+          </label>
+        </div>
+      </div>
+
+      <!-- WS LOG -->
+      <div class="card">
+        <div class="section-title">WS LOG</div>
+        <div class="ws-log" id="wsLog">
+          <div class="log-line" style="color:var(--text-dim)">// Waiting for connection...</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- JOYSTICKS -->
+      <div class="card">
+        <div class="section-title">JOYSTICK CONTROL</div>
+        <div class="joystick-section">
+          <div class="joystick-wrap">
+            <div class="joystick-label">LEFT (S1 / S2)</div>
+            <canvas class="joystick-canvas" id="joy1" width="180" height="180"></canvas>
+            <div class="joystick-vals" id="joy1vals">X: 0 | Y: 0</div>
+          </div>
+          <div class="joystick-wrap">
+            <div class="joystick-label">RIGHT (S3 / S4)</div>
+            <canvas class="joystick-canvas" id="joy2" width="180" height="180"></canvas>
+            <div class="joystick-vals" id="joy2vals">X: 0 | Y: 0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RECORDING -->
+      <div class="card">
+        <div class="section-title">PATH RECORDING</div>
+        <div class="rec-btns">
+          <button class="btn" id="recBtn" onclick="toggleRecording()">⏺ START RECORDING</button>
+          <button class="btn danger" onclick="clearRecording()">🗑 CLEAR</button>
+        </div>
+        <div class="steps-list" id="stepsList">
+          <div class="empty-msg">No recorded steps yet.</div>
+        </div>
+      </div>
+
+      <!-- MANUAL PROGRAMMING -->
+      <div class="card">
+        <div class="section-title">MANUAL PATH PROGRAMMING</div>
+        <div class="manual-controls">
+          <button class="btn primary" onclick="addManualStep()">➕ ADD STEP</button>
+          <button class="btn danger" onclick="clearManualSteps()">🗑 CLEAR ALL</button>
+          <button class="btn success" onclick="sendManualPath()">📡 SEND TO ESP32</button>
+        </div>
+        <div class="prog-table-wrap">
+          <table class="prog-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>S1 (°)</th>
+                <th>S2 (°)</th>
+                <th>S3 (°)</th>
+                <th>S4 (°)</th>
+                <th>SPD</th>
+                <th>DEL</th>
+              </tr>
+            </thead>
+            <tbody id="manualBody">
+              <tr><td colspan="7" class="empty-msg">No steps. Click ADD STEP.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SAVED PATH LIBRARY ══════════════════════ -->
+  <div class="saved-paths-section">
+    <div class="card">
+      <div class="section-title">SAVED PATH LIBRARY</div>
+      <div class="save-bar">
+        <span class="save-bar-label">NAME:</span>
+        <input type="text" id="pathNameInput" placeholder="e.g. Pick & Place" maxlength="32" />
+        <span class="save-bar-label">COLOR:</span>
+        <div class="color-dots" id="colorDots"></div>
+        <span class="save-bar-label">SOURCE:</span>
+        <select class="source-select" id="pathSource">
+          <option value="recorded">Recorded Path</option>
+          <option value="manual">Manual Program</option>
+        </select>
+        <button class="btn primary" onclick="saveCurrentPath()">💾 SAVE PATH</button>
+      </div>
+      <div class="paths-grid" id="pathsGrid">
+        <div class="paths-empty"><div class="big-icon">📂</div>No saved paths yet.<br>Record or program a path, then save it here.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let ws = null;
+let wsIP = '192.168.1.100';
+let currentMode = 'web';
+let speed = 5;
+let isRecording = false;
+let recordedSteps = [];
+let manualSteps = [];
+
+let joy1State = { x: 0, y: 0 };
+let joy2State = { x: 0, y: 0 };
+
+let lastSendTime = 0;
+const THROTTLE_MS = 50; // 20hz max
+
+let isDark = true;
+
+// ─── THEME ────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  isDark = !isDark;
+  document.body.classList.toggle('light-mode', !isDark);
+  document.getElementById('themeBtn').textContent = isDark ? '☀' : '🌙';
+  redrawJoystick(joy1);
+  redrawJoystick(joy2);
+}
+
+// ─── MODAL ────────────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('ipModal').classList.add('open');
+  document.getElementById('ipInput').value = wsIP;
+}
+function closeModal() {
+  document.getElementById('ipModal').classList.remove('open');
+}
+
+// ─── WEBSOCKET ────────────────────────────────────────────────────────────────
+function connectWS() {
+  const ip = document.getElementById('ipInput').value.trim();
+  if (!ip) return;
+  wsIP = ip;
+  closeModal();
+  if (ws) { ws.close(); ws = null; }
+  try {
+    ws = new WebSocket(`ws://${wsIP}:81`);
+    ws.onopen = () => {
+      setStatus(true);
+      addLog(`Connected to ws://${wsIP}:81`);
+    };
+    ws.onclose = () => {
+      setStatus(false);
+      addLog('Connection closed.', 'err');
+    };
+    ws.onerror = () => {
+      setStatus(false);
+      addLog('WebSocket error.', 'err');
+    };
+    ws.onmessage = (e) => {
+      addLog(e.data, 'rx');
+      try {
+        const d = JSON.parse(e.data);
+        if (d.s1 !== undefined) updateServoDisplay(d.s1, d.s2, d.s3, d.s4);
+      } catch {}
+    };
+  } catch (err) {
+    addLog('Failed: ' + err.message, 'err');
+  }
+}
+
+function setStatus(connected) {
+  const pill = document.getElementById('statusPill');
+  const txt = document.getElementById('statusText');
+  pill.classList.toggle('connected', connected);
+  txt.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+}
+
+function addLog(msg, type = '') {
+  const log = document.getElementById('wsLog');
+  const line = document.createElement('div');
+  line.className = 'log-line' + (type === 'rx' ? ' log-rx' : type === 'err' ? ' log-err' : '');
+  const ts = new Date().toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  line.textContent = `[${ts}] ${msg.length > 80 ? msg.slice(0, 80) + '…' : msg}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 60) log.removeChild(log.firstChild);
+}
+
+function sendJSON(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const str = JSON.stringify(obj);
+    ws.send(str);
+    addLog('TX: ' + str);
+  }
+}
+
+// ─── MODE ─────────────────────────────────────────────────────────────────────
+function setMode(m) {
+  currentMode = m;
+  ['physical', 'web', 'auto', 'manual_prog'].forEach(id => {
+    document.getElementById('mode-' + id).classList.toggle('active', id === m);
+  });
+  sendJSON({ mode: m });
+}
+
+// ─── SPEED ────────────────────────────────────────────────────────────────────
+function onSpeedChange(v) {
+  speed = parseInt(v);
+  document.getElementById('speedVal').textContent = v;
+  throttleSendJoystick();
+}
+
+// ─── SERVO DISPLAY ────────────────────────────────────────────────────────────
+function updateServoDisplay(s1, s2, s3, s4) {
+  const vals = [s1, s2, s3, s4];
+  vals.forEach((v, i) => {
+    const n = i + 1;
+    document.getElementById(`sv${n}`).textContent = Math.round(v);
+    document.getElementById(`sb${n}`).style.width = (v / 180 * 100) + '%';
+  });
+}
+
+// ─── JOYSTICK ─────────────────────────────────────────────────────────────────
+class Joystick {
+  constructor(canvasId, onChange) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext('2d');
+    this.size = this.canvas.width;
+    this.cx = this.size / 2;
+    this.cy = this.size / 2;
+    this.r = this.size / 2 - 10;
+    this.knobR = 26;
+    this.kx = this.cx;
+    this.ky = this.cy;
+    this.active = false;
+    this.onChange = onChange;
+    this.x = 0; this.y = 0;
+    this._bind();
+    this._draw();
+  }
+  _bind() {
+    const c = this.canvas;
+    c.addEventListener('mousedown', e => { this.active = true; this._move(e); });
+    c.addEventListener('mousemove', e => { if (this.active) this._move(e); });
+    window.addEventListener('mouseup', () => { if (this.active) { this.active = false; this._center(); } });
+    c.addEventListener('touchstart', e => { e.preventDefault(); this.active = true; this._move(e.touches[0]); }, { passive: false });
+    c.addEventListener('touchmove', e => { e.preventDefault(); if (this.active) this._move(e.touches[0]); }, { passive: false });
+    c.addEventListener('touchend', () => { this.active = false; this._center(); });
+  }
+  _move(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+    let dx = mx - this.cx, dy = my - this.cy;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > this.r) { dx = dx / dist * this.r; dy = dy / dist * this.r; }
+    this.kx = this.cx + dx; this.ky = this.cy + dy;
+    this.x = Math.round(dx / this.r * 100);
+    this.y = Math.round(-dy / this.r * 100);
+    this.onChange(this.x, this.y);
+    if (navigator.vibrate) navigator.vibrate(5);
+    this._draw();
+  }
+  _center() {
+    this.kx = this.cx; this.ky = this.cy;
+    this.x = 0; this.y = 0;
+    this.onChange(0, 0);
+    this._draw();
+  }
+  _draw() {
+    const ctx = this.ctx;
+    const s = this.size;
+    ctx.clearRect(0, 0, s, s);
+    // base circle
+    ctx.beginPath(); ctx.arc(this.cx, this.cy, this.r, 0, Math.PI * 2);
+    const grad = ctx.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, this.r);
+    grad.addColorStop(0, 'rgba(255,153,51,0.07)');
+    grad.addColorStop(1, 'rgba(19,136,8,0.04)');
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,153,51,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+    // crosshairs
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(this.cx, this.cy - this.r); ctx.lineTo(this.cx, this.cy + this.r); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.cx - this.r, this.cy); ctx.lineTo(this.cx + this.r, this.cy); ctx.stroke();
+    // rings
+    [0.33, 0.66].forEach(f => {
+      ctx.beginPath(); ctx.arc(this.cx, this.cy, this.r * f, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,153,51,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+    });
+    // knob shadow
+    ctx.beginPath(); ctx.arc(this.kx + 2, this.ky + 3, this.knobR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill();
+    // knob
+    const kgrad = ctx.createRadialGradient(this.kx - 6, this.ky - 6, 2, this.kx, this.ky, this.knobR);
+    kgrad.addColorStop(0, '#FFB84D');
+    kgrad.addColorStop(0.5, '#FF9933');
+    kgrad.addColorStop(1, '#8B4400');
+    ctx.beginPath(); ctx.arc(this.kx, this.ky, this.knobR, 0, Math.PI * 2);
+    ctx.fillStyle = kgrad; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5; ctx.stroke();
+    // knob center dot
+    ctx.beginPath(); ctx.arc(this.kx, this.ky, 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
+  }
+}
+
+const joy1 = new Joystick('joy1', (x, y) => {
+  joy1State = { x, y };
+  document.getElementById('joy1vals').textContent = `X: ${x} | Y: ${y}`;
+  throttleSendJoystick();
+});
+const joy2 = new Joystick('joy2', (x, y) => {
+  joy2State = { x, y };
+  document.getElementById('joy2vals').textContent = `X: ${x} | Y: ${y}`;
+  throttleSendJoystick();
+});
+
+function redrawJoystick(j) { j._draw(); }
+
+function throttleSendJoystick() {
+  const now = Date.now();
+  if (now - lastSendTime >= THROTTLE_MS) {
+    lastSendTime = now;
+    sendJSON({
+      x1: joy1State.x, y1: joy1State.y,
+      x2: joy2State.x, y2: joy2State.y,
+      speed: speed, mode: currentMode === 'web' ? 'web' : currentMode
+    });
+    if (isRecording) {
+      recordedSteps.push({ x1: joy1State.x, y1: joy1State.y, x2: joy2State.x, y2: joy2State.y, speed });
+      renderStepsList();
+    }
+  }
+}
+
+// ─── RECORDING ────────────────────────────────────────────────────────────────
+function toggleRecording() {
+  isRecording = !isRecording;
+  const btn = document.getElementById('recBtn');
+  if (isRecording) {
+    btn.textContent = '⏹ STOP RECORDING';
+    btn.classList.add('active-rec');
+  } else {
+    btn.textContent = '⏺ START RECORDING';
+    btn.classList.remove('active-rec');
+  }
+}
+
+function clearRecording() {
+  isRecording = false;
+  recordedSteps = [];
+  document.getElementById('recBtn').textContent = '⏺ START RECORDING';
+  document.getElementById('recBtn').classList.remove('active-rec');
+  renderStepsList();
+}
+
+function renderStepsList() {
+  const list = document.getElementById('stepsList');
+  if (recordedSteps.length === 0) {
+    list.innerHTML = '<div class="empty-msg">No recorded steps yet.</div>';
+    return;
+  }
+  list.innerHTML = recordedSteps.map((s, i) =>
+    `<div class="step-item">
+      <span class="step-num">#${String(i+1).padStart(2,'0')}</span>
+      <span>X1:${s.x1} Y1:${s.y1} X2:${s.x2} Y2:${s.y2} SPD:${s.speed}</span>
+      <button class="step-delete" onclick="deleteRecStep(${i})">✕</button>
+    </div>`
+  ).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function deleteRecStep(i) {
+  recordedSteps.splice(i, 1);
+  renderStepsList();
+}
+
+// ─── PLAYBACK ─────────────────────────────────────────────────────────────────
+function playPath() {
+  const loop = document.getElementById('loopToggle').checked;
+  sendJSON({ mode: 'play', loop: loop, steps: recordedSteps });
+}
+
+function stopPath() {
+  sendJSON({ mode: 'stop' });
+}
+
+// ─── MANUAL PROGRAMMING ───────────────────────────────────────────────────────
+function addManualStep() {
+  manualSteps.push({ s1: 90, s2: 90, s3: 90, s4: 90, speed: 5 });
+  renderManualTable();
+}
+
+function deleteManualStep(i) {
+  manualSteps.splice(i, 1);
+  renderManualTable();
+}
+
+function clearManualSteps() {
+  manualSteps = [];
+  renderManualTable();
+}
+
+function sendManualPath() {
+  if (manualSteps.length === 0) { addLog('No manual steps to send.', 'err'); return; }
+  const steps = manualSteps.map(s => ({
+    s1: parseInt(s.s1), s2: parseInt(s.s2),
+    s3: parseInt(s.s3), s4: parseInt(s.s4),
+    speed: parseInt(s.speed)
+  }));
+  sendJSON({ mode: 'manual_path', steps });
+}
+
+function onManualInput(i, field, val) {
+  manualSteps[i][field] = val;
+}
+
+function renderManualTable() {
+  const tbody = document.getElementById('manualBody');
+  if (manualSteps.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No steps. Click ADD STEP.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = manualSteps.map((s, i) => `
+    <tr>
+      <td style="color:var(--saffron);font-weight:bold">${i+1}</td>
+      <td><input type="number" min="0" max="180" value="${s.s1}" oninput="onManualInput(${i},'s1',this.value)"></td>
+      <td><input type="number" min="0" max="180" value="${s.s2}" oninput="onManualInput(${i},'s2',this.value)"></td>
+      <td><input type="number" min="0" max="180" value="${s.s3}" oninput="onManualInput(${i},'s3',this.value)"></td>
+      <td><input type="number" min="0" max="180" value="${s.s4}" oninput="onManualInput(${i},'s4',this.value)"></td>
+      <td><input type="number" min="1" max="10" value="${s.speed}" oninput="onManualInput(${i},'speed',this.value)"></td>
+      <td><button class="del-row-btn" onclick="deleteManualStep(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+// ─── SAVED PATHS ─────────────────────────────────────────────────────────────
+const PATH_COLORS = [
+  { id: 'saffron',  bg: '#FF9933', text: '#fff' },
+  { id: 'green',    bg: '#138808', text: '#fff' },
+  { id: 'blue',     bg: '#4CC9F0', text: '#0D1B2A' },
+  { id: 'red',      bg: '#E63946', text: '#fff' },
+  { id: 'purple',   bg: '#7B2FBE', text: '#fff' },
+  { id: 'teal',     bg: '#0D9488', text: '#fff' },
+  { id: 'gold',     bg: '#D4A017', text: '#fff' },
+];
+let selectedColor = PATH_COLORS[0];
+let savedPaths = JSON.parse(localStorage.getItem('roboarm_paths') || '[]');
+let runningPathId = null;
+
+function initColorDots() {
+  const wrap = document.getElementById('colorDots');
+  wrap.innerHTML = PATH_COLORS.map(c =>
+    `<div class="color-dot ${c.id === selectedColor.id ? 'selected' : ''}"
+      style="background:${c.bg}"
+      onclick="selectColor('${c.id}')" title="${c.id}"></div>`
+  ).join('');
+}
+
+function selectColor(id) {
+  selectedColor = PATH_COLORS.find(c => c.id === id);
+  initColorDots();
+}
+
+function saveCurrentPath() {
+  const name = document.getElementById('pathNameInput').value.trim();
+  if (!name) { document.getElementById('pathNameInput').focus(); addLog('Enter a name for the path.', 'err'); return; }
+  const source = document.getElementById('pathSource').value;
+  const steps = source === 'manual' ? manualSteps : recordedSteps;
+  if (!steps || steps.length === 0) { addLog(`No ${source} steps to save.`, 'err'); return; }
+  const path = {
+    id: Date.now().toString(),
+    name,
+    color: selectedColor,
+    source,
+    steps: JSON.parse(JSON.stringify(steps)),
+    createdAt: new Date().toLocaleString('en-IN'),
+    stepCount: steps.length,
+  };
+  savedPaths.push(path);
+  persistPaths();
+  renderPathsGrid();
+  document.getElementById('pathNameInput').value = '';
+  addLog(`Path "${name}" saved (${steps.length} steps).`);
+}
+
+function deleteSavedPath(id) {
+  savedPaths = savedPaths.filter(p => p.id !== id);
+  persistPaths();
+  renderPathsGrid();
+}
+
+function renamePath(id) {
+  const path = savedPaths.find(p => p.id === id);
+  if (!path) return;
+  const newName = prompt('Rename path:', path.name);
+  if (newName && newName.trim()) {
+    path.name = newName.trim();
+    persistPaths();
+    renderPathsGrid();
+  }
+}
+
+function loadPathToEditor(id) {
+  const path = savedPaths.find(p => p.id === id);
+  if (!path) return;
+  if (path.source === 'manual') {
+    manualSteps = JSON.parse(JSON.stringify(path.steps));
+    renderManualTable();
+    addLog(`Path "${path.name}" loaded into Manual Editor.`);
+  } else {
+    recordedSteps = JSON.parse(JSON.stringify(path.steps));
+    renderStepsList();
+    addLog(`Path "${path.name}" loaded into Recording list.`);
+  }
+}
+
+function runSavedPath(id) {
+  const path = savedPaths.find(p => p.id === id);
+  if (!path) return;
+  runningPathId = id;
+  renderPathsGrid();
+  const loop = document.getElementById('loopToggle').checked;
+  const payload = path.source === 'manual'
+    ? { mode: 'manual_path', steps: path.steps, loop }
+    : { mode: 'play', steps: path.steps, loop };
+  sendJSON(payload);
+  addLog(`▶ Running "${path.name}" (${path.stepCount} steps)`);
+  // Auto-clear running state after estimated time (or on stop)
+  setTimeout(() => { if (runningPathId === id) { runningPathId = null; renderPathsGrid(); } },
+    path.stepCount * 800 + 2000);
+}
+
+function stopSavedPath() {
+  runningPathId = null;
+  sendJSON({ mode: 'stop' });
+  renderPathsGrid();
+}
+
+function persistPaths() {
+  localStorage.setItem('roboarm_paths', JSON.stringify(savedPaths));
+}
+
+function renderPathsGrid() {
+  const grid = document.getElementById('pathsGrid');
+  if (savedPaths.length === 0) {
+    grid.innerHTML = `<div class="paths-empty"><div class="big-icon">📂</div>No saved paths yet.<br>Record or program a path, then save it here.</div>`;
+    return;
+  }
+  grid.innerHTML = savedPaths.map(p => {
+    const isRunning = runningPathId === p.id;
+    const c = p.color || PATH_COLORS[0];
+    const srcIcon = p.source === 'manual' ? '✏' : '⏺';
+    return `
+    <div class="path-card ${isRunning ? 'running' : ''}" id="pc_${p.id}">
+      <div class="path-card-accent" style="background:linear-gradient(90deg,${c.bg},${c.bg}88)"></div>
+      <div class="path-running-bar"></div>
+      <div class="path-card-body">
+        <div class="path-card-name" style="color:${c.bg}" title="${p.name}">${p.name}</div>
+        <div class="path-card-meta">${srcIcon} ${p.source.toUpperCase()} &nbsp;·&nbsp; ${p.stepCount} steps &nbsp;·&nbsp; ${p.createdAt}</div>
+        <div class="path-card-tags">
+          <span class="path-tag" style="border-color:${c.bg}44;color:${c.bg}">${p.stepCount} STEPS</span>
+          <span class="path-tag">${p.source === 'manual' ? 'MANUAL' : 'RECORDED'}</span>
+        </div>
+        <div class="path-card-actions">
+          ${isRunning
+            ? `<button class="path-run-btn running" style="background:${c.bg};color:${c.text}" onclick="stopSavedPath()">⏹ STOP</button>`
+            : `<button class="path-run-btn" style="background:${c.bg};color:${c.text}" onclick="runSavedPath('${p.id}')">▶ RUN</button>`
+          }
+          <button class="path-icon-btn" onclick="loadPathToEditor('${p.id}')" title="Load to editor">📋</button>
+          <button class="path-icon-btn" onclick="renamePath('${p.id}')" title="Rename">✏</button>
+          <button class="path-icon-btn del" onclick="deleteSavedPath('${p.id}')" title="Delete">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+renderStepsList();
+renderManualTable();
+initColorDots();
+renderPathsGrid();
+setTimeout(() => openModal(), 300);
+</script>
+</body>
+</html>
